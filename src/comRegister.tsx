@@ -625,7 +625,7 @@ class ComRegister {
                     data,
                     userData.info.uname,
                     userData.info.face,
-                    data.live_status !== 1 ?
+                    data.live_status !== 1 || data.encrypted === true ?
                         LiveType.NotLiveBroadcast :
                         LiveType.LiveBroadcast
                 )
@@ -1301,7 +1301,7 @@ class ComRegister {
                         }
                     }
                     // 判断直播状态
-                    if (data.live_status === 1) { // 当前正在直播
+                    if (data.live_status === 1 && data.encrypted == false) { // 当前正在直播
                         // 设置开播时间
                         liveTime = data.live_time
                         // 发送直播通知卡片
@@ -1313,13 +1313,81 @@ class ComRegister {
                 }
                 // 检查直播状态
                 switch (data.live_status) {
+                    case 1: {
+                        if (data.encrypted === false) {
+                            if (!open) { // 之前未开播，现在开播了
+                                // 更改直播状态
+                                open = true
+                                // 设置开播时间
+                                liveTime = data.live_time
+                                // 获取主播信息
+                                const attempts = 3
+                                for (let i = 0; i < attempts; i++) {
+                                    try {
+                                        // 主播信息不会变，开播时刷新一次即可
+                                        // 发送请求获取主播信息
+                                        await useMasterInfo(data.uid)
+                                        // 成功则跳出循环
+                                        break
+                                    } catch (e) {
+                                        this.logger.error('liveDetect open getMasterInfo() 发生了错误，错误为：' + e.message)
+                                        if (i === attempts - 1) { // 已尝试三次
+                                            // 发送私聊消息并重启服务
+                                            return await this.sendPrivateMsgAndStopService(ctx, bot)
+                                        }
+                                    }
+                                }
+                                // 定义开播通知语
+                                const liveStartMsg = this.config.customLiveStart
+                                    .replace('-name', username)
+                                    .replace('-time', await ctx.gi.getTimeDifference(liveTime))
+                                    .replace('-link', `https://live.bilibili.com/${data.short_id === 0 ? data.room_id : data.short_id}`)
+                                // 判断是否需要@全体成员
+                                if (this.config.liveStartAtAll) {
+                                    // 发送@全体成员通知
+                                    await sendLiveNotifyCard(data, LiveType.StartBroadcasting, liveStartMsg, true)
+                                } else {
+                                    // 发送直播通知卡片
+                                    await sendLiveNotifyCard(data, LiveType.StartBroadcasting, liveStartMsg)
+                                }
+                            } else { // 还在直播
+                                if (this.config.pushTime > 0) {
+                                    timer++
+                                    // 开始记录时间
+                                    if (timer >= (6 * 60 * this.config.pushTime)) { // 到时间推送直播消息
+                                        // 到时间重新计时
+                                        timer = 0
+                                        // 发送直播通知卡片
+                                        sendLiveNotifyCard(data, LiveType.LiveBroadcast)
+                                    }
+                                }
+                                // 否则继续循环
+                            }
+                            break
+                        }
+                        if (this.config.pushTime > 0) {
+                            // 开始记录时间
+                            if (timer >= (6 * 60 * this.config.pushTime)) { // 到时间推送直播消息
+                                // 到时间重新计时
+                                timer = 0
+                            }
+                            if (timer === 0) {
+                                const liveStartMsg = this.config.customLiveStart
+                                    .replace('-name', username)
+                                    .replace('-time', await ctx.gi.getTimeDifference(liveTime))
+                                    .replace('-link', `https://live.bilibili.com/${data.short_id === 0 ? data.room_id : data.short_id}`)
+                                this.logger.info(liveStartMsg)
+                            }
+                            timer++
+                        }
+                    }
                     case 0:
                     case 2: { // 状态 0 和 2 说明未开播
+                        // 下播了将定时器清零
+                        timer = 0
                         if (open) { // 之前开播，现在下播了
                             // 更改直播状态
                             open = false
-                            // 下播了将定时器清零
-                            timer = 0
                             // 定义下播通知消息
                             const liveEndMsg = this.config.customLiveEnd
                                 .replace('-name', username)
@@ -1346,56 +1414,6 @@ class ComRegister {
                         }
                         // 未进循环，还未开播，继续循环
                         break
-                    }
-                    case 1: {
-                        if (!open) { // 之前未开播，现在开播了
-                            // 更改直播状态
-                            open = true
-                            // 设置开播时间
-                            liveTime = data.live_time
-                            // 获取主播信息
-                            const attempts = 3
-                            for (let i = 0; i < attempts; i++) {
-                                try {
-                                    // 主播信息不会变，开播时刷新一次即可
-                                    // 发送请求获取主播信息
-                                    await useMasterInfo(data.uid)
-                                    // 成功则跳出循环
-                                    break
-                                } catch (e) {
-                                    this.logger.error('liveDetect open getMasterInfo() 发生了错误，错误为：' + e.message)
-                                    if (i === attempts - 1) { // 已尝试三次
-                                        // 发送私聊消息并重启服务
-                                        return await this.sendPrivateMsgAndStopService(ctx, bot)
-                                    }
-                                }
-                            }
-                            // 定义开播通知语
-                            const liveStartMsg = this.config.customLiveStart
-                                .replace('-name', username)
-                                .replace('-time', await ctx.gi.getTimeDifference(liveTime))
-                                .replace('-link', `https://live.bilibili.com/${data.short_id === 0 ? data.room_id : data.short_id}`)
-                            // 判断是否需要@全体成员
-                            if (this.config.liveStartAtAll) {
-                                // 发送@全体成员通知
-                                await sendLiveNotifyCard(data, LiveType.StartBroadcasting, liveStartMsg, true)
-                            } else {
-                                // 发送直播通知卡片
-                                await sendLiveNotifyCard(data, LiveType.StartBroadcasting, liveStartMsg)
-                            }
-                        } else { // 还在直播
-                            if (this.config.pushTime > 0) {
-                                timer++
-                                // 开始记录时间
-                                if (timer >= (6 * 60 * this.config.pushTime)) { // 到时间推送直播消息
-                                    // 到时间重新计时
-                                    timer = 0
-                                    // 发送直播通知卡片
-                                    sendLiveNotifyCard(data, LiveType.LiveBroadcast)
-                                }
-                            }
-                            // 否则继续循环
-                        }
                     }
                 }
             }
