@@ -233,7 +233,8 @@ class BiliAPI extends Service {
     async getLiveRoomInfo(roomId: string) {
         try {
             const { data } = await this.client.get(`${GET_LIVE_ROOM_INFO}?room_id=${roomId}`)
-            return data
+            const { data: data2 } = await this.client.get(`${GET_LIVE_ROOM_INFO}?room_id=${roomId}`)
+            return { ...data, encrypted: data2.encrypted }
         } catch (e) {
             throw new Error('网络异常，本次请求失败！')
         }

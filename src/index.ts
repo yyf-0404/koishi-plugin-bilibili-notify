@@ -399,12 +399,4 @@ export function apply(ctx: Context, config: Config) {
     ctx.plugin(Database)
     // Register ServerManager
     ctx.plugin(ServerManager)
-    // 当用户输入“恶魔兔，启动！”时，执行 help 指令
-    ctx.middleware((session, next) => {
-        if (session.content === '恶魔兔，启动！') {
-            return session.send('启动不了一点')
-        } else {
-            return next()
-        }
-    })
 }
